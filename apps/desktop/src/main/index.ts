@@ -19,14 +19,7 @@ if (process.platform === "win32") {
 }
 
 import { registerIPCHandlers } from "./ipc/handlers";
-import {
-  flushPendingTasks,
-  getProviderSettings,
-  removeConnectedProvider,
-  FutureSchemaError,
-  stopAzureFoundryProxy,
-  stopMoonshotProxy,
-} from "@accomplish_ai/agent-core";
+import { FutureSchemaError } from "@accomplish_ai/agent-core";
 import {
   initThoughtStreamApi,
   startThoughtStreamServer,
@@ -35,7 +28,7 @@ import type { ProviderId } from "@accomplish_ai/agent-core";
 import { disposeTaskManager } from "./opencode";
 import { oauthBrowserFlow } from "./opencode/auth-browser";
 import { migrateLegacyData } from "./store/legacyMigration";
-import { initializeDatabase, closeDatabase } from "./store/db";
+import { initializeStorage, closeStorage, getStorage } from "./store/storage";
 import { getApiKey } from "./store/secureStorage";
 import * as workspaceManager from "./store/workspaceManager";
 import {
@@ -213,7 +206,7 @@ if (!gotTheLock) {
     }
 
     try {
-      initializeDatabase();
+      initializeStorage();
       workspaceManager.initialize();
     } catch (err) {
       if (err instanceof FutureSchemaError) {
@@ -231,7 +224,8 @@ if (!gotTheLock) {
     }
 
     try {
-      const settings = getProviderSettings();
+      const storage = getStorage();
+      const settings = storage.getProviderSettings();
       for (const [id, provider] of Object.entries(
         settings.connectedProviders
       )) {
@@ -243,7 +237,7 @@ if (!gotTheLock) {
             console.warn(
               `[Main] Provider ${providerId} has api_key auth but key not found in secure storage`
             );
-            removeConnectedProvider(providerId);
+            storage.removeConnectedProvider(providerId);
             console.log(
               `[Main] Removed provider ${providerId} due to missing API key`
             );
@@ -292,16 +286,9 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  flushPendingTasks();
-  disposeTaskManager();
+  disposeTaskManager(); // Also cleans up proxies internally
   oauthBrowserFlow.dispose();
-  stopAzureFoundryProxy().catch((err) => {
-    console.error("[Main] Failed to stop Azure Foundry proxy:", err);
-  });
-  stopMoonshotProxy().catch((err) => {
-    console.error("[Main] Failed to stop Moonshot proxy:", err);
-  });
-  closeDatabase();
+  closeStorage();
   workspaceManager.close();
   shutdownLogCollector();
 });
